@@ -1,4 +1,4 @@
-name: Browser tests
+name: OTO tests
 on:
   push:
     branches: [main]
@@ -10,7 +10,7 @@ concurrency:
   group: test-${{ github.ref }}
   cancel-in-progress: true
 jobs:
-  browser-tests:
+  oto-tests:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -18,11 +18,17 @@ jobs:
         with:
           persist-credentials: false
       - name: Check JavaScript syntax
-        run: node --check app.js
-      - name: Install test tools
+        run: |
+          node --check core.js
+          node --check app.js
+      - name: Run unit tests
+        run: node --test tests/core.test.cjs
+      - name: Install browser test tools
         run: |
           python3 -m venv .venv
           .venv/bin/python -m pip install -r tests/requirements.txt
           .venv/bin/python -m playwright install --with-deps chromium
       - name: Run browser tests
-        run: .venv/bin/python tests/test_site.py
+        run: |
+          CHROMIUM_PATH="$(.venv/bin/python -c 'from playwright.sync_api import sync_playwright; p = sync_playwright().start(); print(p.chromium.executable_path); p.stop()')" \
+            .venv/bin/python tests/dom_test.py

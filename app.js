@@ -1,449 +1,439 @@
-'use strict';
-
+/* OTO: a dependency-free, local-first Web Audio playground. */
 (() => {
-  // Keep sibling GitHub Pages projects on the same origin isolated.
-  const scope = new URL('.', window.location.href).pathname;
-  const DATA_KEY = `yohaku:${scope}:notes:v1`;
-  const SETTINGS_KEY = `yohaku:${scope}:settings:v1`;
-  const MAX_NOTES = 1000;
-  const $ = (selector) => document.querySelector(selector);
-  const categories = {
-    ideas: { label: 'アイデアの種', icon: 'spark' },
-    reading: { label: '読書の余韻', icon: 'book' },
-    work: { label: '仕事の気づき', icon: 'work' },
-    life: { label: '日々のかけら', icon: 'leaf' },
-  };
-  const prompts = [
-    '最近、つい誰かに\n話したくなったことは？',
-    'いつもの一日から\nひとつだけ変えるなら？',
-    '読み終えても、まだ\n心に残っている言葉は？',
-    '「ちょっと不便」に\n隠れているアイデアは？',
-    '去年の自分に\n教えてあげたいことは？',
-    '役には立たないけど\n好きなものは？',
-    '当たり前だと思っていた\nことを疑ってみるなら？',
-    '今日、少しだけ\n心が動いた瞬間は？',
-  ];
-  const state = {
-    notes: [], filter: 'all', tag: '', query: '', view: 'grid', sort: 'updated',
-    theme: 'light', persistent: true, editing: null, original: '', baseUpdated: '',
-    promptIndex: Math.floor(Date.now() / 86400000) % prompts.length,
-  };
+  'use strict';
+  const { STEPS, TRACKS, PRESETS, clone, getPreset, validateState, encodeState, decodeState, randomPattern, countNotes, noteFrequency } = window.OTO;
+  const $ = id => document.getElementById(id);
+  const STORAGE_KEY = 'oto:loop:v1';
+  let state = getPreset('daydream');
+  let startupMessage = '';
+  let canStore = true;
+  let undoStack = [];
+  let playing = false;
+  let starting = false;
+  let timer = null;
+  let animation = null;
+  let currentStep = -1;
+  let nextStep = 0;
+  let nextTime = 0;
+  let visualQueue = [];
   let toastTimer;
-  let confirming = false;
-  const uuid = () => globalThis.crypto?.randomUUID?.() || `n-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  const normalize = (text) => text.normalize('NFKC').toLocaleLowerCase('ja');
+  let saveTimer;
+  let dragged = null;
+  let dragMoved = false;
+  let suppressClick = false;
+  let suppressTimer;
+  let tempoEditing = false;
+  let startToken = 0;
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 
-  function element(tag, className, text) {
-    const node = document.createElement(tag);
-    if (className) node.className = className;
-    if (text !== undefined) node.textContent = text;
-    return node;
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) {
+      try {
+        const restored = validateState(JSON.parse(saved));
+        if (restored) state = restored;
+        else startupMessage = '保存データを読み込めなかったため、初期パターンを開きました。';
+      } catch { startupMessage = '保存データを読み込めなかったため、初期パターンを開きました。'; }
+    }
+  } catch { canStore = false; }
+  function readSharedLoop() {
+    const params = new URLSearchParams(location.hash.slice(1));
+    if (!params.has('loop')) return false;
+    const shared = decodeState(params.get('loop'), state.volume);
+    if (!shared) { startupMessage = '共有URLが正しくありません。手元のパターンを表示します。'; return false; }
+    state = shared;
+    startupMessage = '共有されたループを開きました。再生してみよう。';
+    return true;
   }
-  function icon(name) {
-    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    svg.setAttribute('class', 'icon');
-    svg.setAttribute('aria-hidden', 'true');
-    const use = document.createElementNS(svg.namespaceURI, 'use');
-    use.setAttribute('href', `#i-${name}`);
-    svg.append(use);
-    return svg;
+  readSharedLoop();
+
+  class AudioEngine {
+    constructor() { this.context = null; this.sources = new Set(); }
+    async unlock() {
+      if (!this.context) {
+        const Context = window.AudioContext || window.webkitAudioContext;
+        if (!Context) throw new Error('このブラウザは音声合成に対応していません。');
+        this.context = new Context();
+        const ctx = this.context;
+        this.master = ctx.createGain();
+        this.master.gain.value = state.volume * 0.5;
+        this.compressor = ctx.createDynamicsCompressor();
+        this.compressor.threshold.value = -16;
+        this.compressor.knee.value = 18;
+        this.compressor.ratio.value = 5;
+        this.compressor.attack.value = 0.004;
+        this.compressor.release.value = 0.18;
+        this.analyser = ctx.createAnalyser();
+        this.analyser.fftSize = 256;
+        this.data = new Uint8Array(this.analyser.frequencyBinCount);
+        this.master.connect(this.compressor).connect(this.analyser).connect(ctx.destination);
+        this.delay = ctx.createDelay(1);
+        this.delay.delayTime.value = 0.23;
+        this.echo = ctx.createGain();
+        this.echo.gain.value = 0.17;
+        this.feedback = ctx.createGain();
+        this.feedback.gain.value = 0.2;
+        this.delay.connect(this.echo).connect(this.master);
+        this.delay.connect(this.feedback).connect(this.delay);
+        this.noise = ctx.createBuffer(1, Math.floor(ctx.sampleRate * 0.2), ctx.sampleRate);
+        const buffer = this.noise.getChannelData(0);
+        for (let i = 0; i < buffer.length; i++) buffer[i] = Math.random() * 2 - 1;
+        ctx.addEventListener('statechange', () => {
+          if (playing && ctx.state !== 'running') { stop(); toast('音声の再生が中断されました。再生ボタンで再開できます。'); }
+        });
+      }
+      if (this.context.state !== 'running') await this.context.resume();
+      if (this.context.state !== 'running') throw new Error('音声を開始できませんでした。もう一度再生を押してください。');
+      this.setVolume();
+    }
+    setVolume() {
+      if (!this.context) return;
+      const now = this.context.currentTime;
+      this.master.gain.cancelScheduledValues(now);
+      this.master.gain.setTargetAtTime(state.volume * 0.5, now, 0.015);
+    }
+    register(source, nodes) {
+      this.sources.add(source);
+      source.onended = () => { this.sources.delete(source); source.disconnect(); nodes.forEach(node => node.disconnect()); };
+    }
+    tone(frequency, time, type, length, level, detune = 0, echo = true) {
+      const ctx = this.context;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = type;
+      osc.frequency.setValueAtTime(frequency, time);
+      osc.detune.value = detune;
+      gain.gain.setValueAtTime(0, time);
+      gain.gain.linearRampToValueAtTime(level, time + 0.008);
+      gain.gain.exponentialRampToValueAtTime(0.0001, time + length);
+      osc.connect(gain).connect(this.master);
+      if (echo) gain.connect(this.delay);
+      this.register(osc, [gain]);
+      osc.start(time);
+      osc.stop(time + length + 0.02);
+    }
+    percussion(step, time) {
+      const ctx = this.context;
+      if (step % 8 === 0) {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.frequency.setValueAtTime(130, time);
+        osc.frequency.exponentialRampToValueAtTime(43, time + 0.14);
+        gain.gain.setValueAtTime(0, time);
+        gain.gain.linearRampToValueAtTime(0.6, time + 0.004);
+        gain.gain.exponentialRampToValueAtTime(0.0001, time + 0.3);
+        osc.connect(gain).connect(this.master);
+        this.register(osc, [gain]);
+        osc.start(time); osc.stop(time + 0.32);
+      } else {
+        const isSnare = step % 8 === 4;
+        const source = ctx.createBufferSource();
+        source.buffer = this.noise;
+        const filter = ctx.createBiquadFilter();
+        filter.type = 'highpass'; filter.frequency.value = isSnare ? 1300 : 7000;
+        const gain = ctx.createGain();
+        const duration = isSnare ? 0.14 : 0.055;
+        gain.gain.setValueAtTime(0, time);
+        gain.gain.linearRampToValueAtTime(isSnare ? 0.28 : 0.14, time + 0.002);
+        gain.gain.exponentialRampToValueAtTime(0.0001, time + duration);
+        source.connect(filter).connect(gain).connect(this.master);
+        this.register(source, [filter, gain]);
+        source.start(time); source.stop(time + duration + 0.01);
+        if (isSnare) this.tone(170, time, 'triangle', 0.09, 0.13, 0, false);
+      }
+    }
+    note(track, step, time) {
+      if (track === 3) { this.percussion(step, time); return; }
+      const f = noteFrequency(TRACKS[track].notes[step] + PRESETS[state.preset].transpose);
+      if (track === 0) {
+        this.tone(f, time, 'sine', 0.65, 0.28);
+        this.tone(f * 2.001, time, 'sine', 0.23, 0.06);
+      } else if (track === 1) {
+        this.tone(f, time, 'triangle', 0.37, 0.2);
+        this.tone(f * 2, time, 'sine', 0.3, 0.06, -4);
+      } else this.tone(f, time, 'sine', 0.38, 0.48, 0, false);
+    }
+    silence() {
+      if (!this.context) return;
+      const now = this.context.currentTime;
+      this.master.gain.cancelScheduledValues(now);
+      this.master.gain.setTargetAtTime(0, now, 0.008);
+      this.sources.forEach(source => { try { source.stop(now + 0.035); } catch { /* already stopped */ } });
+    }
+    energy() {
+      if (!this.analyser || !playing) return 0;
+      this.analyser.getByteFrequencyData(this.data);
+      return this.data.reduce((sum, n) => sum + n, 0) / (this.data.length * 255);
+    }
   }
-  function toast(message) {
+  const audio = new AudioEngine();
+
+  function toast(text) {
     clearTimeout(toastTimer);
-    $('#toast').textContent = message;
-    $('#toast').hidden = false;
-    toastTimer = setTimeout(() => { $('#toast').hidden = true; }, 4000);
+    $('toast').textContent = text;
+    $('toast').classList.add('visible');
+    toastTimer = setTimeout(() => $('toast').classList.remove('visible'), 3400);
   }
-  function storageWarning(message) {
-    state.persistent = false;
-    $('#storage-warning').textContent = message;
-    $('#storage-warning').hidden = false;
-    $('#storage-status').textContent = '一時保存のみ';
-  }
-  function sampleNotes() {
-    return [
-      ['「余白」を、予定に入れる。', 'なにもしない時間は、なにも生まない時間じゃない。\n\n予定を詰める代わりに、今日は30分だけ空けてみる。そのとき思いついたことを、ここに置いておこう。', 'ideas', ['アイデア', '余白'], true],
-      ['本を閉じたあとの、あの時間。', '読み終えた直後の、まだ物語の中にいるような感覚。\n\nあらすじよりも、自分がどこで立ち止まったかを書き残したい。次に読むときは、違うところが気になるかもしれない。', 'reading', ['読書', 'ことば'], true],
-      ['今日の発見は、帰り道に。', 'ひとつ手前の角を曲がったら、小さな喫茶店を見つけた。\n\nいつもの道にも、まだ知らない景色がある。次は本を一冊持って寄ってみよう。', 'life', ['日常', '発見'], false],
-      ['「なぜ？」をひとつ増やす。', '答えを急ぐ前に、問いを確かめる。\n\n「どうすれば速くなる？」ではなく、「そもそも、なぜこの作業が必要なんだろう？」から考えてみる。明日の打ち合わせで試したい。', 'work', ['仕事', '学び'], false],
-      ['いつかつくりたい、小さなもの。', '使うたびに、少しだけ気分がよくなる道具。\n\n・読んだ本を並べる小さな本棚\n・雨の日だけ開く日記\n・散歩で見つけた色のコレクション\n\nまずは、自分のためにつくってみよう。', 'ideas', ['アイデア', 'つくる'], false],
-    ].map(([title, body, category, tags, favorite], index) => {
-      const date = new Date(Date.now() - index * 86400000 - 3600000).toISOString();
-      return { id: uuid(), title, body, category, tags, favorite, createdAt: date, updatedAt: date, sample: true };
-    });
-  }
-  // Strict, bounded decoding also protects rendering and backup imports from malformed data.
-  function decode(value) {
-    if (!value || value.version !== 1 || !Array.isArray(value.notes) || value.notes.length > MAX_NOTES) {
-      throw new Error('対応する余白のバックアップではありません。');
-    }
-    const ids = new Set();
-    return value.notes.map((note) => {
-      if (!note || typeof note.id !== 'string' || !/^[\w-]{1,100}$/.test(note.id) || ids.has(note.id)
-        || typeof note.title !== 'string' || !note.title.trim() || note.title.length > 120
-        || typeof note.body !== 'string' || note.body.length > 30000
-        || !Object.hasOwn(categories, note.category)
-        || !Array.isArray(note.tags) || note.tags.length > 8
-        || note.tags.some((tag) => typeof tag !== 'string' || !tag.trim() || tag.length > 24)
-        || typeof note.favorite !== 'boolean'
-        || typeof note.createdAt !== 'string' || !Number.isFinite(Date.parse(note.createdAt))
-        || typeof note.updatedAt !== 'string' || !Number.isFinite(Date.parse(note.updatedAt))) {
-        throw new Error('ノートの形式が正しくないため、読み込みませんでした。');
-      }
-      ids.add(note.id);
-      return {
-        id: note.id, title: note.title.trim(), body: note.body, category: note.category,
-        tags: [...new Set(note.tags.map((tag) => tag.trim()))], favorite: note.favorite,
-        createdAt: new Date(note.createdAt).toISOString(), updatedAt: new Date(note.updatedAt).toISOString(),
-        sample: note.sample === true,
-      };
-    });
-  }
-  function load() {
-    let raw;
-    try { raw = localStorage.getItem(DATA_KEY); }
-    catch { storageWarning('保存領域を利用できません。ノートはこのタブを閉じると失われます。必要な内容はバックアップしてください。'); }
-    if (raw == null) {
-      state.notes = sampleNotes();
-      persist();
-    } else {
-      try { state.notes = decode(JSON.parse(raw)); }
-      catch {
-        state.notes = [];
-        storageWarning('保存データを読み取れません。元のデータは上書きしていません。ここでの編集は一時保存です。ブラウザのサイトデータを消す前に、元データを保全してください。');
-      }
-    }
+  function save() {
+    clearTimeout(saveTimer);
+    if (!canStore) { $('save-status').textContent = '自動保存不可 · 共有で保存できます'; return; }
     try {
-      const settings = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}');
-      if (settings && typeof settings === 'object') {
-        if (['light', 'dark'].includes(settings.theme)) state.theme = settings.theme;
-        if (['grid', 'list'].includes(settings.view)) state.view = settings.view;
-        if (['updated', 'created', 'title'].includes(settings.sort)) state.sort = settings.sort;
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      $('save-status').textContent = '保存しました';
+      saveTimer = setTimeout(() => { $('save-status').textContent = 'このブラウザに自動保存'; }, 1600);
+    } catch { canStore = false; $('save-status').textContent = '自動保存不可 · 共有で保存できます'; }
+  }
+  function remember() { undoStack.push(clone(state)); if (undoStack.length > 30) undoStack.shift(); }
+  function detachSharedURL() {
+    if (new URLSearchParams(location.hash.slice(1)).has('loop')) {
+      try {
+        const clean = new URL(location.href); clean.hash = '';
+        history.replaceState(null, '', clean.href);
+      } catch { /* file:// or restricted history */ }
+    }
+  }
+  function changed(custom = true) {
+    if (custom) state.custom = true;
+    detachSharedURL(); render(); save();
+  }
+  function createGrid() {
+    const spacer = document.createElement('span');
+    $('step-numbers').append(spacer);
+    for (let i = 0; i < STEPS; i++) {
+      const number = document.createElement('span');
+      number.className = 'step-number' + (i % 4 === 0 ? ' beat-start' : '');
+      number.textContent = String(i + 1).padStart(2, '0');
+      $('step-numbers').append(number);
+    }
+    TRACKS.forEach((track, row) => {
+      const el = document.createElement('div');
+      el.className = 'track'; el.dataset.row = row;
+      el.style.setProperty('--track', track.color);
+      const label = document.createElement('button');
+      label.type = 'button'; label.className = 'track-label'; label.dataset.mute = row;
+      label.innerHTML = `<span class="track-dot"></span><span class="track-text"><strong>${track.name}</strong><small>${track.hint}</small></span>`;
+      label.addEventListener('click', () => { remember(); state.muted[row] = !state.muted[row]; changed(); });
+      el.append(label);
+      for (let col = 0; col < STEPS; col++) {
+        const cell = document.createElement('button');
+        cell.type = 'button'; cell.className = 'step'; cell.dataset.row = row; cell.dataset.col = col;
+        cell.tabIndex = row === 0 && col === 0 ? 0 : -1;
+        cell.addEventListener('click', () => {
+          if (suppressClick) return;
+          remember(); toggleCell(cell, !state.pattern[row][col]); changed();
+        });
+        cell.addEventListener('pointerdown', event => {
+          // Touch users retain horizontal scrolling; tapping still toggles a cell.
+          if (event.pointerType === 'touch' || event.button !== 0) return;
+          dragged = { row, col, value: !state.pattern[row][col], cell, visited: new Set([`${row}:${col}`]) };
+          dragMoved = false;
+        });
+        cell.addEventListener('pointerenter', event => {
+          if (!dragged || !(event.buttons & 1)) return;
+          if (!dragMoved) { remember(); toggleCell(dragged.cell, dragged.value); dragMoved = true; }
+          const key = `${row}:${col}`;
+          if (!dragged.visited.has(key)) { dragged.visited.add(key); toggleCell(cell, dragged.value); }
+          changed();
+        });
+        cell.addEventListener('keydown', event => {
+          const direction = { ArrowRight: [0, 1], ArrowLeft: [0, -1], ArrowUp: [-1, 0], ArrowDown: [1, 0] }[event.key];
+          if (!direction) return;
+          event.preventDefault();
+          const r = (row + direction[0] + 4) % 4, c = (col + direction[1] + STEPS) % STEPS;
+          focusCell(r, c);
+        });
+        cell.addEventListener('focus', () => {
+          document.querySelectorAll('.step[tabindex="0"]').forEach(other => { other.tabIndex = -1; });
+          cell.tabIndex = 0;
+        });
+        el.append(cell);
       }
-    } catch { /* Display preferences are optional; malformed settings do not affect notes. */ }
-  }
-  function persist() {
-    if (!state.persistent) return;
-    try { localStorage.setItem(DATA_KEY, JSON.stringify({ version: 1, notes: state.notes })); }
-    catch { storageWarning('保存容量が不足しているか、保存が許可されていません。変更はこのタブ内だけに保持されています。バックアップを書き出してください。'); }
-  }
-  function saveSettings() {
-    try { localStorage.setItem(SETTINGS_KEY, JSON.stringify({ theme: state.theme, view: state.view, sort: state.sort })); }
-    catch { /* Notes persistence has its own, explicit error state. */ }
-  }
-  function refreshFromStorage() {
-    if (!state.persistent) return;
-    try {
-      const raw = localStorage.getItem(DATA_KEY);
-      state.notes = raw === null ? [] : decode(JSON.parse(raw));
-    } catch { storageWarning('保存データへのアクセスに失敗しました。以後の変更は一時保存です。バックアップを書き出してください。'); }
-  }
-  function commit() { persist(); render(); }
-  function applyTheme() {
-    document.documentElement.dataset.theme = state.theme;
-    const dark = state.theme === 'dark';
-    $('#theme-toggle').setAttribute('aria-pressed', String(dark));
-    $('#theme-toggle').setAttribute('aria-label', `${dark ? 'ライト' : 'ダーク'}テーマに切り替える`);
-    $('#theme-toggle').replaceChildren(icon(dark ? 'sun' : 'moon'));
-    $('meta[name="theme-color"]').content = dark ? '#1e2420' : '#f7f7f2';
-  }
-  function dateLabel(value) {
-    return new Intl.DateTimeFormat('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(value)).replaceAll('/', '.');
-  }
-  function filteredNotes() {
-    const terms = normalize(state.query.trim()).split(/\s+/).filter(Boolean);
-    return state.notes.filter((note) => {
-      if (state.filter === 'favorites' && !note.favorite) return false;
-      if (Object.hasOwn(categories, state.filter) && note.category !== state.filter) return false;
-      if (state.tag && !note.tags.includes(state.tag)) return false;
-      const text = normalize([note.title, note.body, ...note.tags].join(' '));
-      return terms.every((term) => text.includes(term));
-    }).sort((a, b) => {
-      if (state.sort === 'title') return a.title.localeCompare(b.title, 'ja');
-      const key = state.sort === 'created' ? 'createdAt' : 'updatedAt';
-      return b[key].localeCompare(a[key]) || a.id.localeCompare(b.id);
+      $('tracks').append(el);
     });
   }
-  function makeCard(note) {
-    const article = element('article', 'note-card');
-    article.dataset.category = note.category;
-    article.dataset.id = note.id;
-    const top = element('div', 'card-top');
-    const category = element('span', 'card-category');
-    category.append(icon(categories[note.category].icon), document.createTextNode(categories[note.category].label));
-    const star = element('button', 'icon-button card-star');
-    star.type = 'button';
-    star.setAttribute('aria-label', `${note.title}：お気に入り${note.favorite ? 'から外す' : 'に追加'}`);
-    star.setAttribute('aria-pressed', String(note.favorite));
-    star.append(icon('star'));
-    star.addEventListener('click', () => {
-      refreshFromStorage();
-      const current = state.notes.find((item) => item.id === note.id);
-      if (!current) { render(); toast('このノートは別のタブで削除されています。'); return; }
-      current.favorite = !current.favorite;
-      current.updatedAt = new Date().toISOString();
-      commit();
-      [...document.querySelectorAll('.note-card')].find((card) => card.dataset.id === note.id)?.querySelector('.card-star').focus();
-    });
-    top.append(category, star);
-    const content = element('div', 'card-content');
-    const heading = element('h3', 'card-title');
-    const open = element('button', 'card-open', note.title);
-    open.type = 'button';
-    open.addEventListener('click', () => openEditor(note.id));
-    heading.append(open);
-    content.append(heading, element('p', 'card-preview', note.body || 'まだ本文のない、小さな考え。'));
-    const tags = element('div', 'card-tags');
-    note.tags.slice(0, 3).forEach((tag) => tags.append(element('span', '', `# ${tag}`)));
-    const bottom = element('div', 'card-bottom');
-    const left = element('span');
-    const date = element('time', '', dateLabel(note.updatedAt));
-    date.dateTime = note.updatedAt;
-    left.append(date);
-    if (note.sample) left.append(element('span', 'sample-label', 'SAMPLE'));
-    bottom.append(left, icon('arrow'));
-    article.append(top, content, tags, bottom);
-    return article;
+  function focusCell(row, col) { document.querySelector(`.step[data-row="${row}"][data-col="${col}"]`).focus(); }
+  async function audition(row, col) {
+    try { await audio.unlock(); if (!playing && !starting && !document.hidden) audio.note(row, col, audio.context.currentTime + 0.008); }
+    catch { toast('試聴できませんでした。再生ボタンを押してみてください。'); }
   }
+  function toggleCell(cell, value) {
+    const row = Number(cell.dataset.row), col = Number(cell.dataset.col);
+    state.pattern[row][col] = value;
+    if (value && !playing && !state.muted[row]) audition(row, col);
+  }
+  function finishDrag() {
+    if (dragged && dragMoved) {
+      suppressClick = true; clearTimeout(suppressTimer);
+      suppressTimer = setTimeout(() => { suppressClick = false; }, 0);
+    }
+    dragged = null; dragMoved = false;
+  }
+  window.addEventListener('pointerup', finishDrag);
+  window.addEventListener('pointercancel', finishDrag);
+  window.addEventListener('blur', finishDrag);
+
   function render() {
-    const visible = filteredNotes();
-    const total = state.notes.length;
-    $('#library-title').textContent = state.filter === 'all' ? 'すべてのノート' : state.filter === 'favorites' ? 'お気に入り' : categories[state.filter].label;
-    $('#result-count').textContent = `${visible.length} ${visible.length === 1 ? 'note' : 'notes'}`;
-    document.querySelectorAll('[data-filter]').forEach((button) => {
-      const active = button.dataset.filter === state.filter;
-      button.classList.toggle('active', active);
-      if (active) button.setAttribute('aria-current', 'page'); else button.removeAttribute('aria-current');
-    });
-    document.querySelectorAll('[data-count]').forEach((node) => {
-      const category = node.dataset.count;
-      node.textContent = category === 'all' ? total : state.notes.filter((note) => category === 'favorites' ? note.favorite : note.category === category).length;
-    });
-    const tagCounts = new Map();
-    state.notes.forEach((note) => note.tags.forEach((tag) => tagCounts.set(tag, (tagCounts.get(tag) || 0) + 1)));
-    const tags = [...tagCounts].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'ja')).slice(0, 8).map(([tag]) => tag);
-    if (state.tag && !tags.includes(state.tag)) tags.push(state.tag);
-    $('#tag-filters').replaceChildren(...tags.map((tag) => {
-      const button = element('button', `tag-chip${state.tag === tag ? ' active' : ''}`, `# ${tag}`);
-      button.setAttribute('aria-pressed', String(state.tag === tag));
-      button.addEventListener('click', () => { state.tag = state.tag === tag ? '' : tag; render(); });
-      return button;
-    }));
-    const filtering = Boolean(state.query.trim() || state.tag || state.filter !== 'all');
-    $('#reset-filter').hidden = !filtering;
-    const list = $('#notes');
-    list.classList.toggle('list-view', state.view === 'list');
-    list.replaceChildren(...visible.map(makeCard));
-    if (visible.length && !filtering) {
-      const add = element('button', 'new-card');
-      add.append(icon('plus'), element('span', '', 'まだ、名前のないアイデア。'), element('small', '', '新しいノートを、ひとつ。'));
-      add.addEventListener('click', () => openEditor());
-      list.append(add);
-    }
-    $('#empty-state').hidden = visible.length !== 0;
-    $('#empty-title').textContent = filtering ? 'まだ、見つからないみたいです。' : 'まっさらな余白です。';
-    $('#empty-description').textContent = filtering ? '言葉を変えるか、絞り込みをはずしてみましょう。' : '最初のひとことから、はじめてみましょう。';
-    $('#empty-action').textContent = filtering ? '絞り込みを解除' : 'ノートを書く';
-    ['grid', 'list'].forEach((view) => {
-      $(`#${view}-view`).classList.toggle('selected', state.view === view);
-      $(`#${view}-view`).setAttribute('aria-pressed', String(state.view === view));
-    });
-    $('#sort').value = state.sort;
-  }
-  function resetFilters() { state.filter = 'all'; state.tag = ''; state.query = ''; $('#search').value = ''; render(); }
-  function formSnapshot() {
-    return JSON.stringify({ title: $('#note-title').value, body: $('#note-body').value, category: $('#note-category').value, tags: $('#note-tags').value, favorite: $('#note-favorite').checked });
-  }
-  function isDirty() { return $('#editor').open && state.original !== formSnapshot(); }
-  function openEditor(id = null, prompt = '') {
-    if ($('#editor').open) return;
-    closeMenu();
-    refreshFromStorage();
-    const note = id ? state.notes.find((item) => item.id === id) : null;
-    if (id && !note) { render(); toast('このノートは別のタブで削除されています。'); return; }
-    state.editing = id;
-    state.baseUpdated = note?.updatedAt || '';
-    $('#note-title').value = note?.title || prompt;
-    $('#note-body').value = note?.body || '';
-    $('#note-category').value = note?.category || (Object.hasOwn(categories, state.filter) ? state.filter : 'ideas');
-    $('#note-tags').value = note?.tags.join(', ') || '';
-    $('#note-favorite').checked = note?.favorite || false;
-    $('#delete-note').hidden = !note;
-    $('#editor-error').hidden = true;
-    $('#char-count').textContent = `${$('#note-body').value.length.toLocaleString('ja-JP')} 文字`;
-    state.original = formSnapshot();
-    $('#editor').showModal();
-    (prompt ? $('#note-body') : $('#note-title')).focus();
-  }
-  function ask(title, description, action = '続ける') {
-    if (confirming) return Promise.resolve(false);
-    confirming = true;
-    const dialog = $('#confirm-dialog');
-    $('#confirm-title').textContent = title;
-    $('#confirm-description').textContent = description;
-    $('#confirm-ok').textContent = action;
-    dialog.returnValue = 'cancel';
-    dialog.showModal();
-    return new Promise((resolve) => dialog.addEventListener('close', () => {
-      confirming = false;
-      resolve(dialog.returnValue === 'ok');
-    }, { once: true }));
-  }
-  function finishEditing() {
-    $('#editor').close();
-    state.editing = null;
-    state.original = '';
-    $('#new-note').focus();
-  }
-  async function requestClose() {
-    if (!isDirty() || await ask('変更を保存せずに閉じますか？', '保存していない変更は失われます。', '保存せずに閉じる')) finishEditing();
-  }
-  function formError(message) { $('#editor-error').textContent = message; $('#editor-error').hidden = false; }
-  function saveNote(event) {
-    event.preventDefault();
-    if (confirming) return;
-    const title = $('#note-title').value.trim();
-    if (!title) { formError('タイトルを入力してください。'); $('#note-title').focus(); return; }
-    const tags = [...new Set($('#note-tags').value.split(/[,、，\n]/).map((tag) => tag.trim().replace(/^#+\s*/, '')).filter(Boolean))];
-    if (tags.length > 8 || tags.some((tag) => tag.length > 24)) { formError('タグは8個まで、1個あたり24文字以内で入力してください。'); return; }
-    refreshFromStorage();
-    const current = state.notes.find((note) => note.id === state.editing);
-    if (state.editing && (!current || current.updatedAt !== state.baseUpdated)) {
-      formError('別のタブでこのノートが変更されています。上書きはしていません。入力内容をコピーしてから開き直してください。'); return;
-    }
-    if (!current && state.notes.length >= MAX_NOTES) { formError('ノートは1,000件までです。不要なノートを整理してください。'); return; }
-    const now = new Date().toISOString();
-    const note = {
-      id: current?.id || uuid(), title, body: $('#note-body').value,
-      category: $('#note-category').value, tags, favorite: $('#note-favorite').checked,
-      createdAt: current?.createdAt || now, updatedAt: now, sample: false,
-    };
-    if (current) state.notes = state.notes.map((item) => item.id === current.id ? note : item);
-    else { state.notes.unshift(note); resetFilters(); }
-    commit();
-    finishEditing();
-    toast(state.persistent ? '小さな考えを、保存しました。' : 'このタブ内に一時保存しました。バックアップをおすすめします。');
-  }
-  async function deleteNote() {
-    const id = state.editing;
-    if (!id || !await ask('このノートを削除しますか？', '削除したノートは元に戻せません。必要な場合は先にバックアップしてください。', '削除する')) return;
-    refreshFromStorage();
-    const current = state.notes.find((note) => note.id === id);
-    if (current && current.updatedAt !== state.baseUpdated) { formError('別のタブで変更されたため削除していません。開き直して内容を確認してください。'); return; }
-    state.notes = state.notes.filter((note) => note.id !== id);
-    commit();
-    finishEditing();
-    toast('ノートを削除しました。');
-  }
-  function exportBackup() {
-    refreshFromStorage();
-    const data = { version: 1, exportedAt: new Date().toISOString(), notes: state.notes };
-    const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json;charset=utf-8' }));
-    const link = element('a');
-    link.href = url;
-    link.download = `yohaku-${new Date().toISOString().slice(0, 10)}.json`;
-    document.body.append(link);
-    link.click();
-    link.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 15000);
-    toast('バックアップを書き出しました。');
-  }
-  async function importBackup(file) {
-    if (!file) return;
-    if (file.size > 10 * 1024 * 1024) { toast('10 MB以下のJSONファイルを選んでください。'); return; }
-    try {
-      const incoming = decode(JSON.parse(await file.text()));
-      if (!incoming.length) { toast('このバックアップにはノートがありません。'); return; }
-      if (!await ask('バックアップを読み込みますか？', `${incoming.length}件のノートを読み込みます。既存のノートは残し、同じIDのノートは更新日が新しい方を採用します。`, '読み込む')) return;
-      refreshFromStorage();
-      const merged = new Map(state.notes.map((note) => [note.id, note]));
-      let changed = 0;
-      incoming.forEach((note) => {
-        const old = merged.get(note.id);
-        if (!old || old.updatedAt < note.updatedAt) { merged.set(note.id, note); changed++; }
+    $('loop-title').textContent = state.custom ? 'Your loop' : PRESETS[state.preset].name;
+    $('loop-subtitle').textContent = state.custom ? 'いい感じ。その音は、あなただけのもの。' : PRESETS[state.preset].subtitle;
+    $('tempo').value = state.bpm; $('tempo-value').value = state.bpm;
+    $('tempo').style.setProperty('--range', `${state.bpm - 60}%`);
+    $('volume').value = Math.round(state.volume * 100);
+    $('volume-value').value = `${Math.round(state.volume * 100)}%`;
+    $('volume').style.setProperty('--range', `${state.volume * 100}%`);
+    $('note-count').textContent = `${countNotes(state)} NOTES / 16 STEPS`;
+    $('undo-button').disabled = undoStack.length === 0;
+    document.querySelectorAll('.track').forEach((el, row) => {
+      el.classList.toggle('is-muted', state.muted[row]);
+      const label = el.querySelector('.track-label');
+      label.setAttribute('aria-pressed', String(state.muted[row]));
+      label.setAttribute('aria-label', `${TRACKS[row].name}を${state.muted[row] ? 'ミュート解除' : 'ミュート'}`);
+      el.querySelectorAll('.step').forEach((cell, col) => {
+        cell.setAttribute('aria-pressed', String(state.pattern[row][col]));
+        cell.setAttribute('aria-label', `${TRACKS[row].name} ステップ${col + 1} ${state.pattern[row][col] ? 'オン' : 'オフ'}`);
       });
-      if (merged.size > MAX_NOTES) { toast('合計1,000件を超えるため読み込みませんでした。'); return; }
-      state.notes = [...merged.values()];
-      resetFilters();
-      commit();
-      toast(`${changed}件のノートを追加・更新しました。${state.persistent ? '' : 'このタブ内だけの一時保存です。'}`);
-    } catch (error) { toast(error instanceof SyntaxError ? 'JSONファイルを読み取れません。既存のノートは変更していません。' : error.message || 'ファイルを読み取れません。'); }
-    finally { $('#import-file').value = ''; }
+    });
+    document.querySelectorAll('[data-preset]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.preset === state.preset && !state.custom)));
+    if (audio.context && playing) audio.setVolume();
+    if (!playing) drawArt(0);
   }
-  function renderPrompt() {
-    $('#prompt-text').textContent = prompts[state.promptIndex];
-    $('#prompt-number').textContent = `NO. ${String(state.promptIndex + 1).padStart(2, '0')} / 08`;
+  function highlight(step) {
+    if (currentStep === step) return;
+    currentStep = step;
+    document.querySelectorAll('.step-number').forEach((el, index) => el.classList.toggle('is-current', index === step));
+    document.querySelectorAll('.step').forEach(el => el.classList.toggle('is-current', Number(el.dataset.col) === step));
   }
-  function closeMenu() {
-    $('#sidebar').classList.remove('open');
-    $('#sidebar-shade').hidden = true;
-    $('#menu-toggle').setAttribute('aria-expanded', 'false');
+  function schedule() {
+    if (!playing) return;
+    const now = audio.context.currentTime;
+    // Never emit a burst of late notes after a stalled/backgrounded event loop.
+    if (nextTime < now - 0.1) { nextTime = now + 0.03; visualQueue = []; }
+    while (nextTime < now + 0.1) {
+      state.pattern.forEach((row, track) => { if (row[nextStep] && !state.muted[track]) audio.note(track, nextStep, nextTime); });
+      visualQueue.push({ step: nextStep, time: nextTime });
+      nextTime += 60 / state.bpm / 4;
+      nextStep = (nextStep + 1) % STEPS;
+    }
+  }
+  function frame(timestamp) {
+    if (!playing) return;
+    while (visualQueue.length && visualQueue[0].time <= audio.context.currentTime) highlight(visualQueue.shift().step);
+    if (!reducedMotion.matches) drawArt(timestamp);
+    animation = requestAnimationFrame(frame);
+  }
+  async function start() {
+    if (playing || starting) return;
+    const token = ++startToken;
+    starting = true; $('play-button').disabled = true;
+    try {
+      await audio.unlock();
+      if (token !== startToken || document.hidden) { audio.silence(); return; }
+      playing = true; nextStep = 0; nextTime = audio.context.currentTime + 0.045; visualQueue = [];
+      document.body.classList.add('is-playing');
+      $('play-button').setAttribute('aria-pressed', 'true'); $('play-button').setAttribute('aria-label', 'ループを停止');
+      $('play-label').textContent = 'とめる'; document.querySelector('.play-icon').textContent = 'Ⅱ';
+      $('playback-status').textContent = 'NOW PLAYING'; $('visual-state').textContent = 'A LITTLE NOISE, ALL YOURS';
+      schedule(); timer = setInterval(schedule, 25); animation = requestAnimationFrame(frame);
+    } catch (error) { toast(error.message || '音声を開始できませんでした。'); }
+    finally { starting = false; $('play-button').disabled = false; }
+  }
+  function stop() {
+    ++startToken; playing = false;
+    clearInterval(timer); cancelAnimationFrame(animation); timer = null; animation = null; visualQueue = [];
+    audio.silence(); highlight(-1);
+    document.body.classList.remove('is-playing');
+    $('play-button').setAttribute('aria-pressed', 'false'); $('play-button').setAttribute('aria-label', 'ループを再生');
+    $('play-label').textContent = '再生する'; document.querySelector('.play-icon').textContent = '▶';
+    $('playback-status').textContent = 'READY TO PLAY'; $('visual-state').textContent = 'WAITING FOR YOUR FIRST NOTE';
+    drawArt(0);
+  }
+  function togglePlay() { if (playing || starting) stop(); else start(); }
+
+  const canvas = $('visualizer');
+  const ctx = canvas.getContext('2d');
+  function drawArt(timestamp) {
+    if (!ctx) return;
+    const width = 640, height = 440;
+    ctx.clearRect(0, 0, width, height);
+    const energy = audio.energy();
+    const t = playing && !reducedMotion.matches ? timestamp / 2200 : 0;
+    ctx.save(); ctx.translate(width / 2, height / 2); ctx.rotate(-0.32);
+    const radius = 171 + energy * 40;
+    ctx.fillStyle = '#d7ed9c'; ctx.beginPath();
+    ctx.ellipse(0, 0, radius, radius * 0.96, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#586440'; ctx.lineWidth = 1.15;
+    for (let ring = 0; ring < 23; ring++) {
+      const r = 13 + ring * 7;
+      ctx.beginPath();
+      for (let point = 0; point <= 160; point++) {
+        const a = point / 160 * Math.PI * 2;
+        const wobble = Math.sin(a * 3 + t + ring * 0.16) * (3.5 + energy * 16) + Math.cos(a * 2 - t * 0.7) * 3;
+        const x = Math.cos(a) * (r + wobble), y = Math.sin(a) * (r + wobble) * 0.96;
+        if (point === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      ctx.closePath(); ctx.stroke();
+    }
+    ctx.restore();
   }
 
-  load();
-  applyTheme();
-  render();
-  renderPrompt();
-  const today = new Date();
-  $('#today').dateTime = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-  $('#today').textContent = new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).format(today).toUpperCase();
-  $('#new-note').addEventListener('click', () => openEditor());
-  $('#close-editor').addEventListener('click', requestClose);
-  $('#editor').addEventListener('cancel', (event) => { event.preventDefault(); requestClose(); });
-  $('#note-form').addEventListener('submit', saveNote);
-  $('#delete-note').addEventListener('click', deleteNote);
-  $('#note-body').addEventListener('input', () => { $('#char-count').textContent = `${$('#note-body').value.length.toLocaleString('ja-JP')} 文字`; });
-  $('#search').addEventListener('input', (event) => { state.query = event.target.value; render(); });
-  $('#sort').addEventListener('change', (event) => { state.sort = event.target.value; saveSettings(); render(); });
-  $('#reset-filter').addEventListener('click', resetFilters);
-  $('#empty-action').addEventListener('click', () => { if (state.query.trim() || state.tag || state.filter !== 'all') resetFilters(); else openEditor(); });
-  document.querySelectorAll('[data-filter]').forEach((button) => button.addEventListener('click', () => {
-    state.filter = button.dataset.filter;
-    state.tag = '';
-    state.query = '';
-    $('#search').value = '';
-    closeMenu();
-    render();
+  $('play-button').addEventListener('click', togglePlay);
+  $('random-button').addEventListener('click', () => { remember(); state.pattern = randomPattern(); state.muted.fill(false); changed(); toast('新しい偶然ができました。'); });
+  $('clear-button').addEventListener('click', () => {
+    if (!countNotes(state)) return;
+    remember(); state.pattern = TRACKS.map(() => Array(STEPS).fill(false)); changed(); toast('まっさらになりました。「戻す」で取り消せます。');
+  });
+  $('undo-button').addEventListener('click', () => {
+    if (!undoStack.length) return;
+    const volume = state.volume; state = undoStack.pop(); state.volume = volume; changed(false); toast('ひとつ前のループに戻しました。');
+  });
+  document.querySelectorAll('[data-preset]').forEach(button => button.addEventListener('click', () => {
+    remember(); state = getPreset(button.dataset.preset, state.volume); changed(false);
+    toast(`${PRESETS[state.preset].name} に切り替えました。`);
   }));
-  ['grid', 'list'].forEach((view) => $(`#${view}-view`).addEventListener('click', () => { state.view = view; saveSettings(); render(); }));
-  $('#theme-toggle').addEventListener('click', () => { state.theme = state.theme === 'light' ? 'dark' : 'light'; applyTheme(); saveSettings(); });
-  $('#shuffle-prompt').addEventListener('click', () => { state.promptIndex = (state.promptIndex + 1) % prompts.length; renderPrompt(); });
-  $('#use-prompt').addEventListener('click', () => openEditor(null, prompts[state.promptIndex].replace('\n', '')));
-  $('#export').addEventListener('click', exportBackup);
-  $('#import').addEventListener('click', () => { $('#import-file').value = ''; $('#import-file').click(); });
-  $('#import-file').addEventListener('change', (event) => importBackup(event.target.files[0]));
-  $('#menu-toggle').addEventListener('click', () => {
-    const open = !$('#sidebar').classList.contains('open');
-    $('#sidebar').classList.toggle('open', open);
-    $('#sidebar-shade').hidden = !open;
-    $('#menu-toggle').setAttribute('aria-expanded', String(open));
-    menuAccessibility();
-    if (open) $('#sidebar .nav-item').focus();
+  $('tempo').addEventListener('input', event => {
+    if (!tempoEditing) { remember(); tempoEditing = true; }
+    state.bpm = Number(event.target.value); changed();
   });
-  $('#sidebar-shade').addEventListener('click', closeMenu);
-  const mobile = matchMedia('(max-width: 680px)');
-  function menuAccessibility() { $('#sidebar').inert = mobile.matches && !$('#sidebar').classList.contains('open'); }
-  new MutationObserver(menuAccessibility).observe($('#sidebar'), { attributes: true, attributeFilter: ['class'] });
-  mobile.addEventListener('change', () => { closeMenu(); menuAccessibility(); });
-  menuAccessibility();
-  document.addEventListener('keydown', (event) => {
-    if (event.isComposing) return;
-    if ($('#confirm-dialog').open) return;
-    if ($('#editor').open) {
-      if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') { event.preventDefault(); $('#note-form').requestSubmit(); }
-      return;
+  ['change', 'blur'].forEach(type => $('tempo').addEventListener(type, () => { tempoEditing = false; }));
+  $('volume').addEventListener('input', event => {
+    state.volume = Number(event.target.value) / 100; render(); audio.setVolume(); save();
+  });
+  document.addEventListener('keydown', event => {
+    if (event.repeat || event.ctrlKey || event.metaKey || event.altKey || document.querySelector('dialog[open]')) return;
+    const tag = event.target.tagName;
+    if (['INPUT', 'TEXTAREA', 'SELECT'].includes(tag) || event.target.isContentEditable) return;
+    // Native button Space/Enter activation is preserved for keyboard accessibility.
+    if (event.code === 'Space' && !['BUTTON', 'A'].includes(tag)) { event.preventDefault(); togglePlay(); }
+    else if (event.key.toLowerCase() === 'r') { event.preventDefault(); $('random-button').click(); }
+    else if (event.key === '?') { $('help-dialog').showModal(); }
+  });
+  document.addEventListener('visibilitychange', () => { if (document.hidden) { stop(); save(); } });
+  window.addEventListener('pagehide', () => { stop(); save(); });
+  window.addEventListener('hashchange', () => {
+    const before = clone(state);
+    if (readSharedLoop()) { undoStack.push(before); stop(); render(); save(); toast(startupMessage); }
+    else if (new URLSearchParams(location.hash.slice(1)).has('loop')) toast(startupMessage);
+  });
+
+  async function share() {
+    const url = new URL(location.href);
+    url.hash = new URLSearchParams({ loop: encodeState(state) }).toString();
+    $('share-url').value = url.href;
+    const isLocal = ['file:'].includes(location.protocol) || ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname);
+    $('share-note').textContent = isLocal ? '現在はローカル表示です。別の端末へ共有するには、公開したサイトからこの操作を行ってください。' : 'リンク先では、再生ボタンを押すと音が鳴ります。';
+    if (!isLocal && navigator.clipboard && window.isSecureContext) {
+      try { await navigator.clipboard.writeText(url.href); toast('ループのURLをコピーしました。'); return; }
+      catch { /* Permission denied: retain an explicit, selectable fallback. */ }
     }
-    if (event.key === 'Escape') { closeMenu(); return; }
-    const typing = event.target.closest('input, textarea, select, [contenteditable="true"]');
-    if (typing) return;
-    if (event.key === '/' || ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k')) {
-      event.preventDefault(); closeMenu(); $('#search').focus();
-    } else if (event.key.toLowerCase() === 'n' && !event.ctrlKey && !event.metaKey && !event.altKey) {
-      event.preventDefault(); openEditor();
-    }
-  });
-  window.addEventListener('beforeunload', (event) => { if (isDirty()) { event.preventDefault(); event.returnValue = ''; } });
-  window.addEventListener('storage', (event) => {
-    if (event.key === DATA_KEY || event.key === null) { refreshFromStorage(); render(); }
-  });
+    $('share-dialog').showModal(); $('share-url').focus(); $('share-url').select();
+  }
+  $('share-button').addEventListener('click', share);
+  [$('help-button'), $('footer-help')].forEach(button => button.addEventListener('click', () => $('help-dialog').showModal()));
+  document.querySelectorAll('[data-close]').forEach(button => button.addEventListener('click', () => button.closest('dialog').close()));
+  document.querySelectorAll('dialog').forEach(dialog => dialog.addEventListener('click', event => {
+    const rect = dialog.getBoundingClientRect();
+    if (event.target === dialog && (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom)) dialog.close();
+  }));
+  createGrid(); render();
+  if (!canStore) $('save-status').textContent = '自動保存不可 · 共有で保存できます';
+  if (startupMessage) toast(startupMessage);
 })();

@@ -3,85 +3,88 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#f7f7f2">
-  <meta name="description" content="思いつき、読書の余韻、日々の発見。余白は、小さな考えを置いておくブラウザだけのノートです。">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'">
-  <title>余白 / YOHAKU — 小さな考えの置き場所</title>
+  <meta name="theme-color" content="#f5f3eb">
+  <meta name="description" content="考えるより、鳴らしてみよう。4つの音と16のステップで、あなただけの小さなループを作る音のプレイグラウンド。">
+  <title>OTO — 音のプレイグラウンド</title>
   <link rel="icon" href="./favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="./styles.css">
+  <script src="./core.js" defer></script>
   <script src="./app.js" defer></script>
 </head>
 <body>
-  <svg class="icon-defs" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs>
-    <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></symbol>
-    <symbol id="i-star" viewBox="0 0 24 24"><path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.6l6.2-.9Z"/></symbol>
-    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
-    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4.5 4.5"/></symbol>
-    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M6 18 18 6M6 6h12v12"/></symbol>
-    <symbol id="i-list" viewBox="0 0 24 24"><path d="M9 5h12M9 12h12M9 19h12M3 5h1M3 12h1M3 19h1"/></symbol>
-    <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20.6 14A8.5 8.5 0 0 1 10 3.4 8.6 8.6 0 1 0 20.6 14Z"/></symbol>
-    <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.4 1.4m11.2 11.2L19 19M5 19l1.4-1.4M17.6 6.4 19 5"/></symbol>
-    <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5"/></symbol>
-    <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V4m-5 5 5-5 5 5M4 16v5h16v-5"/></symbol>
-    <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6"/></symbol>
-    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M6 6a8 8 0 0 1 13 3M5 15a8 8 0 0 0 13 3"/></symbol>
-    <symbol id="i-book" viewBox="0 0 24 24"><path d="M12 6c-3-2-6-2-9-1v14c3-1 6-1 9 1 3-2 6-2 9-1V5c-3-1-6-1-9 1Zm0 0v14"/></symbol>
-    <symbol id="i-leaf" viewBox="0 0 24 24"><path d="M5 19C-2 5 12 5 20 3c-1 10-3 18-13 14M4 21 15 10"/></symbol>
-    <symbol id="i-work" viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="14" rx="2"/><path d="M8 7V3h8v4M3 12c6 4 12 4 18 0M12 12v5"/></symbol>
-    <symbol id="i-spark" viewBox="0 0 24 24"><path d="m12 2 2.5 7.5L22 12l-7.5 2.5L12 22l-2.5-7.5L2 12l7.5-2.5Z"/></symbol>
-    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7m4-7v7"/></symbol>
-    <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></symbol>
-  </defs></svg>
-  <a class="skip-link" href="#main">ノートへ移動</a>
-  <button class="sidebar-shade" id="sidebar-shade" aria-label="メニューを閉じる" hidden></button>
-  <aside class="sidebar" id="sidebar" aria-label="サイドメニュー">
-    <a class="brand" href="./" aria-label="余白 ホーム"><span class="brand-mark"><i></i><i></i><i></i><i></i></span><span class="brand-name">余白<span>Y O H A K U</span></span></a>
-    <div class="workspace"><span class="workspace-avatar">y.</span><span>わたしのスペース<small>YOUR LITTLE NOTEBOOK</small></span><span class="workspace-dot"></span></div>
-    <nav aria-label="ノートの絞り込み">
-      <p class="nav-label">LIBRARY</p>
-      <button class="nav-item active" data-filter="all" aria-current="page"><svg class="icon"><use href="#i-grid"/></svg><span>すべてのノート</span><span class="nav-count" data-count="all">0</span></button>
-      <button class="nav-item" data-filter="favorites"><svg class="icon"><use href="#i-star"/></svg><span>お気に入り</span><span class="nav-count" data-count="favorites">0</span></button>
-      <p class="nav-label collection-label">COLLECTIONS</p>
-      <button class="nav-item" data-filter="ideas"><span class="category-dot ideas"></span><span>アイデアの種</span><span class="nav-count" data-count="ideas">0</span></button>
-      <button class="nav-item" data-filter="reading"><span class="category-dot reading"></span><span>読書の余韻</span><span class="nav-count" data-count="reading">0</span></button>
-      <button class="nav-item" data-filter="work"><span class="category-dot work"></span><span>仕事の気づき</span><span class="nav-count" data-count="work">0</span></button>
-      <button class="nav-item" data-filter="life"><span class="category-dot life"></span><span>日々のかけら</span><span class="nav-count" data-count="life">0</span></button>
-    </nav>
-    <div class="sidebar-bottom">
-      <div class="quiet-note"><svg class="icon"><use href="#i-leaf"/></svg><p>まだ、まとまらなくていい。<br>ここは、考えの育つ場所。</p><span>A LITTLE ROOM TO THINK.</span></div>
-      <button class="utility-button" id="export"><svg class="icon"><use href="#i-download"/></svg>バックアップを書き出す</button>
-      <button class="utility-button" id="import"><svg class="icon"><use href="#i-upload"/></svg>バックアップを読み込む</button>
-      <input id="import-file" type="file" accept="application/json,.json" hidden>
-      <div class="local-status"><span class="status-dot"></span><span id="storage-status">このブラウザに保存</span><span class="version">v1.0</span></div>
-    </div>
-  </aside>
-  <main class="main" id="main" tabindex="-1">
-    <header class="topbar"><div class="breadcrumb"><button class="icon-button mobile-menu" id="menu-toggle" aria-label="メニューを開く" aria-expanded="false" aria-controls="sidebar"><svg class="icon"><use href="#i-menu"/></svg></button><span>MY SPACE</span><span class="slash">/</span><span>あなたのノート</span></div><div class="topbar-right"><time id="today"></time><button class="icon-button" id="theme-toggle" aria-label="ダークテーマに切り替える" aria-pressed="false"><svg class="icon"><use href="#i-moon"/></svg></button></div></header>
-    <div class="storage-warning" id="storage-warning" role="alert" hidden></div>
-    <section class="intro" aria-labelledby="intro-title">
-      <div class="intro-copy"><p class="eyebrow"><span></span> COLLECT SMALL THOUGHTS</p><h1 id="intro-title">思いつきを、<br>そのまま置いておこう<span class="title-dot">。</span></h1><p class="intro-description">読んだこと、感じたこと、ふと思ったこと。<br>小さな考えが、いつかどこかでつながるように。</p></div>
-      <div class="prompt-stack"><span class="orbit-spark" aria-hidden="true">✳</span><div class="prompt-paper"><div class="prompt-header"><span><svg class="icon"><use href="#i-spark"/></svg> ひらめきの種</span><button class="icon-button" id="shuffle-prompt" aria-label="別の問いを表示"><svg class="icon"><use href="#i-refresh"/></svg></button></div><p id="prompt-text">最近、つい誰かに<br>話したくなったことは？</p><button id="use-prompt" class="text-button">この問いで書いてみる <svg class="icon"><use href="#i-arrow"/></svg></button><span class="paper-number" id="prompt-number">NO. 01 / 08</span></div><span class="handwritten" aria-hidden="true">a small thought, a new beginning.</span></div>
-    </section>
-    <section class="library" aria-labelledby="library-title">
-      <div class="section-heading"><div><h2 id="library-title">すべてのノート</h2><span id="result-count" role="status" aria-live="polite">0 notes</span></div><button class="primary-button" id="new-note"><svg class="icon"><use href="#i-plus"/></svg>ノートを書く<span class="keycap">N</span></button></div>
-      <div class="toolbar"><div class="search-wrap"><svg class="icon"><use href="#i-search"/></svg><label class="sr-only" for="search">ノートを検索</label><input id="search" type="search" placeholder="言葉やタグで、探してみる" maxlength="200" autocomplete="off"><kbd>/</kbd></div><div class="toolbar-right"><label class="sr-only" for="sort">並び順</label><select id="sort"><option value="updated">更新が新しい順</option><option value="created">作成が新しい順</option><option value="title">タイトル順</option></select><span class="toolbar-divider"></span><div class="view-switch" role="group" aria-label="表示方法"><button class="icon-button selected" id="grid-view" aria-label="グリッド表示" aria-pressed="true"><svg class="icon"><use href="#i-grid"/></svg></button><button class="icon-button" id="list-view" aria-label="リスト表示" aria-pressed="false"><svg class="icon"><use href="#i-list"/></svg></button></div></div></div>
-      <div class="tags-bar"><span class="tags-label">TAGS</span><div id="tag-filters" class="tag-filters" role="group" aria-label="タグの絞り込み"></div><button class="reset-filter" id="reset-filter" hidden>絞り込みを解除</button></div>
-      <div class="notes-grid" id="notes"></div>
-      <div class="empty-state" id="empty-state" hidden><svg class="icon"><use href="#i-leaf"/></svg><h3 id="empty-title">まっさらな余白です。</h3><p id="empty-description">最初のひとことから、はじめてみましょう。</p><button class="secondary-button" id="empty-action">ノートを書く</button></div>
-    </section>
-    <footer class="footer"><span>うまく書かなくていい。忘れる前に、ここに。</span><span>MADE FOR YOUR WANDERING MIND <svg class="icon"><use href="#i-spark"/></svg></span></footer>
-  </main>
-  <dialog id="editor" class="editor" aria-labelledby="editor-heading">
-    <form id="note-form"><div class="editor-top"><span class="eyebrow" id="editor-heading">A LITTLE THOUGHT</span><button type="button" class="icon-button" id="close-editor" aria-label="ノートを閉じる"><svg class="icon"><use href="#i-close"/></svg></button></div>
-      <label class="sr-only" for="note-title">タイトル</label><input class="note-title-input" id="note-title" placeholder="まだ、名前のないアイデア。" maxlength="120" required autocomplete="off">
-      <div class="editor-meta"><label>コレクション<select id="note-category"><option value="ideas">アイデアの種</option><option value="reading">読書の余韻</option><option value="work">仕事の気づき</option><option value="life">日々のかけら</option></select></label><label class="favorite-check"><input type="checkbox" id="note-favorite"><svg class="icon"><use href="#i-star"/></svg>お気に入り</label></div>
-      <label class="sr-only" for="note-body">本文</label><textarea id="note-body" placeholder="うまくまとまっていなくても、大丈夫。" maxlength="30000"></textarea>
-      <div class="editor-tags"><label for="note-tags">TAGS</label><input id="note-tags" placeholder="読書, ひらめき（カンマ区切り・8個まで）" maxlength="240"><span id="char-count">0 文字</span></div>
-      <p class="editor-error" id="editor-error" role="alert" hidden></p><div class="editor-footer"><button type="button" id="delete-note" class="delete-button" hidden><svg class="icon"><use href="#i-trash"/></svg><span>削除</span></button><span class="save-hint">保存するまで変更は反映されません</span><button type="submit" class="primary-button">保存する <span class="keycap">⌘ / Ctrl ↵</span></button></div>
-    </form>
-  </dialog>
-  <dialog id="confirm-dialog" class="confirm-dialog" aria-labelledby="confirm-title" aria-describedby="confirm-description"><form method="dialog"><h2 id="confirm-title">確認</h2><p id="confirm-description"></p><div class="confirm-actions"><button class="secondary-button" value="cancel" autofocus>キャンセル</button><button class="primary-button" id="confirm-ok" value="ok">続ける</button></div></form></dialog>
-  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
-  <noscript><div class="noscript">余白を使うにはJavaScriptを有効にしてください。ノートはこのブラウザ内だけに保存されます。</div></noscript>
+  <a class="skip-link" href="#studio">音作りへスキップ</a>
+  <div class="page-shell">
+    <header class="site-header">
+      <a class="wordmark" href="#" aria-label="OTO ホーム">oto<span class="brand-dot">.</span></a>
+      <span class="brand-caption">音のプレイグラウンド</span>
+      <nav aria-label="メインナビゲーション">
+        <a href="#studio" class="nav-active">Playground <span>↗</span></a>
+        <button type="button" id="help-button">遊び方 <span>↗</span></button>
+      </nav>
+      <span class="local-badge"><span></span> MADE IN YOUR BROWSER</span>
+    </header>
+
+    <main>
+      <section class="hero" aria-labelledby="hero-title">
+        <div class="hero-copy">
+          <p class="eyebrow"><span class="tiny-cross">✳</span> A SMALL EXPERIMENT IN SOUND</p>
+          <h1 id="hero-title">Make a little<br><span class="noise-word">noise<svg viewBox="0 0 370 20" aria-hidden="true"><path d="M4 12Q160-5 364 9M42 18Q221 4 343 14"/></svg></span><span class="hero-period">.</span></h1>
+          <p class="hero-description">考えるより、鳴らしてみよう。<br>点を置くだけ。正解のない、あなただけのループ。</p>
+        </div>
+        <div class="sound-art" aria-hidden="true">
+          <div class="art-label"><span>FIG. 01 / SOUND IN MOTION</span><span>↗</span></div>
+          <div class="art-stage"><div class="orbit orbit-one"></div><div class="orbit orbit-two"></div><canvas id="visualizer" width="640" height="440"></canvas><span class="art-spark">✳</span><span class="art-dot"></span><span class="art-center"></span></div>
+          <div class="art-footer"><span id="visual-state">WAITING FOR YOUR FIRST NOTE</span><span class="mini-bars"><i></i><i></i><i></i><i></i><i></i></span></div>
+        </div>
+        <div class="hero-side-note">NO SKILLS NEEDED. JUST CURIOSITY.</div>
+      </section>
+
+      <section class="studio" id="studio" aria-labelledby="studio-title">
+        <div class="studio-heading">
+          <div class="section-title"><span class="section-index">01</span><h2 id="studio-title">The playground<span>音を置いて、遊ぼう。</span></h2></div>
+          <div class="save-status"><span class="status-dot"></span><span id="save-status" role="status">このブラウザに自動保存</span></div>
+        </div>
+        <div class="instrument">
+          <aside class="transport">
+            <div class="transport-top"><span class="panel-caption">YOUR LITTLE LOOP</span><span class="record-dot"></span></div>
+            <div class="loop-title" id="loop-title">Daydream</div>
+            <div class="loop-subtitle" id="loop-subtitle">昼下がりの、ひとやすみ。</div>
+            <button class="play-button" id="play-button" type="button" aria-label="ループを再生" aria-pressed="false"><span class="play-icon" aria-hidden="true">▶</span><span id="play-label">再生する</span><kbd>SPACE</kbd></button>
+            <div class="tempo-control">
+              <label for="tempo">TEMPO <span><output id="tempo-value" for="tempo">96</output> <span class="unit">BPM</span></span></label>
+              <input id="tempo" type="range" min="60" max="160" step="1" value="96" aria-label="テンポ（BPM）">
+              <div class="range-ends"><span>SLOW</span><span>FAST</span></div>
+            </div>
+            <div class="volume-control"><label for="volume" aria-label="音量">VOL.</label><input id="volume" type="range" min="0" max="100" value="38" aria-label="音量"><output id="volume-value" for="volume">38%</output></div>
+            <div class="transport-footer"><span class="headphone-icon" aria-hidden="true">♬</span> 小さめの音量から、お楽しみください。</div>
+          </aside>
+          <div class="sequencer">
+            <div class="sequence-toolbar"><p><span class="live-dot"></span><span id="playback-status" role="status">READY TO PLAY</span></p><div class="tool-buttons"><button id="random-button" type="button" title="ランダムに音を並べる（R）"><span aria-hidden="true">⚄</span> おまかせ</button><button id="clear-button" type="button" title="すべての音を消す">クリア</button><button id="undo-button" type="button" title="ひとつ前の編集に戻す" disabled>戻す</button></div></div>
+            <p class="mobile-hint">← 横にスクロールして、16ステップを編集 →</p>
+            <div class="grid-scroll" tabindex="0" role="region" aria-label="16ステップの音作り。各ボタンで音のオン・オフを切り替えます。">
+              <div class="grid-inner"><div id="step-numbers" class="step-numbers" aria-hidden="true"></div><div id="tracks" class="tracks"></div><div class="beat-guide" aria-hidden="true"><span></span><span>01 — START</span><span>02</span><span>03</span><span>04 — LOOP ↺</span></div></div>
+            </div>
+            <div class="sequence-footer"><span><span class="instruction-dot"></span> マスをクリックして音を ON / OFF <span class="desktop-hint">· ドラッグでも描けます</span></span><span id="note-count">0 NOTES / 16 STEPS</span></div>
+          </div>
+        </div>
+        <div class="studio-bottom"><p><kbd>SPACE</kbd> 再生 / 停止 <span>·</span> <kbd>R</kbd> おまかせ <span>·</span> 音の名前を押すとミュート</p><button id="share-button" class="share-button" type="button">このループを共有 <span aria-hidden="true">↗</span></button></div>
+      </section>
+
+      <section class="presets-section" aria-labelledby="presets-title">
+        <div class="presets-intro"><p class="eyebrow">NEED A LITTLE INSPIRATION?</p><h2 id="presets-title">気分から、はじめる。</h2><p>気になる音を選んで、自由に変えてみよう。</p></div>
+        <div class="preset-list">
+          <button type="button" class="preset-card" data-preset="daydream" aria-pressed="true"><span class="preset-art art-day"><i></i><i></i><i></i><i></i><i></i></span><span class="preset-copy"><span class="preset-category">SOFT & AIRY</span><strong>Daydream</strong><span>昼下がりの白昼夢</span></span><span class="preset-arrow" aria-hidden="true">↗</span></button>
+          <button type="button" class="preset-card" data-preset="afterglow" aria-pressed="false"><span class="preset-art art-after"><i></i><i></i><i></i><i></i></span><span class="preset-copy"><span class="preset-category">WARM & SLOW</span><strong>Afterglow</strong><span>夕暮れの余韻</span></span><span class="preset-arrow" aria-hidden="true">↗</span></button>
+          <button type="button" class="preset-card" data-preset="nightwalk" aria-pressed="false"><span class="preset-art art-night"><i></i><i></i><i></i><i></i></span><span class="preset-copy"><span class="preset-category">LATE & GROOVY</span><strong>Nightwalk</strong><span>夜を歩くリズム</span></span><span class="preset-arrow" aria-hidden="true">↗</span></button>
+        </div>
+      </section>
+      <section class="about-strip" id="about"><span class="about-star" aria-hidden="true">✳</span><p>うまく作らなくていい。<strong>なんか好き、でいい。</strong></p><span>4 SOUNDS. 16 STEPS. ENDLESS POSSIBILITIES.</span></section>
+    </main>
+    <footer class="site-footer"><a class="footer-brand" href="#">oto.</a><span>A tiny playground for your ears.</span><span>音声のアップロードなし · アカウント不要</span><button id="footer-help" type="button">このサイトについて ↗</button></footer>
+  </div>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <dialog id="help-dialog" aria-labelledby="help-title"><div class="dialog-top"><span class="eyebrow">A FEW LITTLE TIPS</span><button class="dialog-close" type="button" data-close aria-label="閉じる">×</button></div><h2 id="help-title">まずは、ひとつ鳴らそう。</h2><p>「再生する」を押すとループが始まります。4つの音のマスをクリックすると、再生しながら音の並びを変えられます。</p><dl class="help-list"><div><dt>音を描く</dt><dd>マスをクリック、またはドラッグしてオン・オフ。矢印キーでマスを移動し、Enterで切り替えられます。</dd></div><div><dt>気分を変える</dt><dd>プリセットで雰囲気を選び、テンポや「おまかせ」でアレンジ。直前の編集は「戻す」で取り消せます。</dd></div><div><dt>持ち帰る</dt><dd>パターンはブラウザに自動保存。「共有」で作ったループのURLをコピーできます。相手は再生ボタンを押すだけ。</dd></div></dl><p class="help-note">音はブラウザ内で合成します。マイク・音声ファイル・ログインは使いません。非表示のタブでは再生を停止します。</p><button class="dialog-primary" type="button" data-close>さっそく遊ぶ ↗</button></dialog>
+  <dialog id="share-dialog" aria-labelledby="share-title"><div class="dialog-top"><span class="eyebrow">PASS THE GOOD VIBES</span><button class="dialog-close" type="button" data-close aria-label="閉じる">×</button></div><h2 id="share-title">このループを、誰かに。</h2><p>下のURLに音の並びとテンポが入っています。コピーして共有してください。</p><label for="share-url" class="sr-only">共有URL</label><textarea id="share-url" readonly rows="4"></textarea><p class="help-note" id="share-note">リンク先では、再生ボタンを押すと音が鳴ります。</p><button class="dialog-primary" type="button" data-close>閉じる</button></dialog>
+  <noscript><div class="noscript">OTOで音を作るには、ブラウザのJavaScriptを有効にしてください。</div></noscript>
 </body>
 </html>
