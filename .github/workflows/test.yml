@@ -1,0 +1,28 @@
+name: Browser tests
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  browser-tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check JavaScript syntax
+        run: node --check app.js
+      - name: Install test tools
+        run: |
+          python3 -m venv .venv
+          .venv/bin/python -m pip install -r tests/requirements.txt
+          .venv/bin/python -m playwright install --with-deps chromium
+      - name: Run browser tests
+        run: .venv/bin/python tests/test_site.py
