@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f3eb">
+  <meta name="description" content="考えるより、鳴らしてみよう。4つの音と16のステップで、あなただけの小さなループを作る音のプレイグラウンド。">
+  <title>OTO — 音のプレイグラウンド</title>
+  <link rel="icon" href="./favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./styles.css">
+  <script src="./core.js" defer></script>
+  <script src="./app.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#studio">音作りへスキップ</a>
+  <div class="page-shell">
+    <header class="site-header">
+      <a class="wordmark" href="#" aria-label="OTO ホーム">oto<span class="brand-dot">.</span></a>
+      <span class="brand-caption">音のプレイグラウンド</span>
+      <nav aria-label="メインナビゲーション">
+        <a href="#studio" class="nav-active">Playground <span>↗</span></a>
+        <button type="button" id="help-button">遊び方 <span>↗</span></button>
+      </nav>
+      <span class="local-badge"><span></span> MADE IN YOUR BROWSER</span>
+    </header>
+
+    <main>
+      <section class="hero" aria-labelledby="hero-title">
+        <div class="hero-copy">
+          <p class="eyebrow"><span class="tiny-cross">✳</span> A SMALL EXPERIMENT IN SOUND</p>
+          <h1 id="hero-title">Make a little<br><span class="noise-word">noise<svg viewBox="0 0 370 20" aria-hidden="true"><path d="M4 12Q160-5 364 9M42 18Q221 4 343 14"/></svg></span><span class="hero-period">.</span></h1>
+          <p class="hero-description">考えるより、鳴らしてみよう。<br>点を置くだけ。正解のない、あなただけのループ。</p>
+        </div>
+        <div class="sound-art" aria-hidden="true">
+          <div class="art-label"><span>FIG. 01 / SOUND IN MOTION</span><span>↗</span></div>
+          <div class="art-stage"><div class="orbit orbit-one"></div><div class="orbit orbit-two"></div><canvas id="visualizer" width="640" height="440"></canvas><span class="art-spark">✳</span><span class="art-dot"></span><span class="art-center"></span></div>
+          <div class="art-footer"><span id="visual-state">WAITING FOR YOUR FIRST NOTE</span><span class="mini-bars"><i></i><i></i><i></i><i></i><i></i></span></div>
+        </div>
+        <div class="hero-side-note">NO SKILLS NEEDED. JUST CURIOSITY.</div>
+      </section>
+
+      <section class="studio" id="studio" aria-labelledby="studio-title">
+        <div class="studio-heading">
+          <div class="section-title"><span class="section-index">01</span><h2 id="studio-title">The playground<span>音を置いて、遊ぼう。</span></h2></div>
+          <div class="save-status"><span class="status-dot"></span><span id="save-status" role="status">このブラウザに自動保存</span></div>
+        </div>
+        <div class="instrument">
+          <aside class="transport">
+            <div class="transport-top"><span class="panel-caption">YOUR LITTLE LOOP</span><span class="record-dot"></span></div>
+            <div class="loop-title" id="loop-title">Daydream</div>
+            <div class="loop-subtitle" id="loop-subtitle">昼下がりの、ひとやすみ。</div>
+            <button class="play-button" id="play-button" type="button" aria-label="ループを再生" aria-pressed="false"><span class="play-icon" aria-hidden="true">▶</span><span id="play-label">再生する</span><kbd>SPACE</kbd></button>
+            <div class="tempo-control">
+              <label for="tempo">TEMPO <span><output id="tempo-value" for="tempo">96</output> <span class="unit">BPM</span></span></label>
+              <input id="tempo" type="range" min="60" max="160" step="1" value="96" aria-label="テンポ（BPM）">
+              <div class="range-ends"><span>SLOW</span><span>FAST</span></div>
+            </div>
+            <div class="volume-control"><label for="volume" aria-label="音量">VOL.</label><input id="volume" type="range" min="0" max="100" value="38" aria-label="音量"><output id="volume-value" for="volume">38%</output></div>
+            <div class="transport-footer"><span class="headphone-icon" aria-hidden="true">♬</span> 小さめの音量から、お楽しみください。</div>
+          </aside>
+          <div class="sequencer">
+            <div class="sequence-toolbar"><p><span class="live-dot"></span><span id="playback-status" role="status">READY TO PLAY</span></p><div class="tool-buttons"><button id="random-button" type="button" title="ランダムに音を並べる（R）"><span aria-hidden="true">⚄</span> おまかせ</button><button id="clear-button" type="button" title="すべての音を消す">クリア</button><button id="undo-button" type="button" title="ひとつ前の編集に戻す" disabled>戻す</button></div></div>
+            <p class="mobile-hint">← 横にスクロールして、16ステップを編集 →</p>
+            <div class="grid-scroll" tabindex="0" role="region" aria-label="16ステップの音作り。各ボタンで音のオン・オフを切り替えます。">
+              <div class="grid-inner"><div id="step-numbers" class="step-numbers" aria-hidden="true"></div><div id="tracks" class="tracks"></div><div class="beat-guide" aria-hidden="true"><span></span><span>01 — START</span><span>02</span><span>03</span><span>04 — LOOP ↺</span></div></div>
+            </div>
+            <div class="sequence-footer"><span><span class="instruction-dot"></span> マスをクリックして音を ON / OFF <span class="desktop-hint">· ドラッグでも描けます</span></span><span id="note-count">0 NOTES / 16 STEPS</span></div>
+          </div>
+        </div>
+        <div class="studio-bottom"><p><kbd>SPACE</kbd> 再生 / 停止 <span>·</span> <kbd>R</kbd> おまかせ <span>·</span> 音の名前を押すとミュート</p><button id="share-button" class="share-button" type="button">このループを共有 <span aria-hidden="true">↗</span></button></div>
+      </section>
+
+      <section class="presets-section" aria-labelledby="presets-title">
+        <div class="presets-intro"><p class="eyebrow">NEED A LITTLE INSPIRATION?</p><h2 id="presets-title">気分から、はじめる。</h2><p>気になる音を選んで、自由に変えてみよう。</p></div>
+        <div class="preset-list">
+          <button type="button" class="preset-card" data-preset="daydream" aria-pressed="true"><span class="preset-art art-day"><i></i><i></i><i></i><i></i><i></i></span><span class="preset-copy"><span class="preset-category">SOFT & AIRY</span><strong>Daydream</strong><span>昼下がりの白昼夢</span></span><span class="preset-arrow" aria-hidden="true">↗</span></button>
+          <button type="button" class="preset-card" data-preset="afterglow" aria-pressed="false"><span class="preset-art art-after"><i></i><i></i><i></i><i></i></span><span class="preset-copy"><span class="preset-category">WARM & SLOW</span><strong>Afterglow</strong><span>夕暮れの余韻</span></span><span class="preset-arrow" aria-hidden="true">↗</span></button>
+          <button type="button" class="preset-card" data-preset="nightwalk" aria-pressed="false"><span class="preset-art art-night"><i></i><i></i><i></i><i></i></span><span class="preset-copy"><span class="preset-category">LATE & GROOVY</span><strong>Nightwalk</strong><span>夜を歩くリズム</span></span><span class="preset-arrow" aria-hidden="true">↗</span></button>
+        </div>
+      </section>
+      <section class="about-strip" id="about"><span class="about-star" aria-hidden="true">✳</span><p>うまく作らなくていい。<strong>なんか好き、でいい。</strong></p><span>4 SOUNDS. 16 STEPS. ENDLESS POSSIBILITIES.</span></section>
+    </main>
+    <footer class="site-footer"><a class="footer-brand" href="#">oto.</a><span>A tiny playground for your ears.</span><span>音声のアップロードなし · アカウント不要</span><button id="footer-help" type="button">このサイトについて ↗</button></footer>
+  </div>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <dialog id="help-dialog" aria-labelledby="help-title"><div class="dialog-top"><span class="eyebrow">A FEW LITTLE TIPS</span><button class="dialog-close" type="button" data-close aria-label="閉じる">×</button></div><h2 id="help-title">まずは、ひとつ鳴らそう。</h2><p>「再生する」を押すとループが始まります。4つの音のマスをクリックすると、再生しながら音の並びを変えられます。</p><dl class="help-list"><div><dt>音を描く</dt><dd>マスをクリック、またはドラッグしてオン・オフ。矢印キーでマスを移動し、Enterで切り替えられます。</dd></div><div><dt>気分を変える</dt><dd>プリセットで雰囲気を選び、テンポや「おまかせ」でアレンジ。直前の編集は「戻す」で取り消せます。</dd></div><div><dt>持ち帰る</dt><dd>パターンはブラウザに自動保存。「共有」で作ったループのURLをコピーできます。相手は再生ボタンを押すだけ。</dd></div></dl><p class="help-note">音はブラウザ内で合成します。マイク・音声ファイル・ログインは使いません。非表示のタブでは再生を停止します。</p><button class="dialog-primary" type="button" data-close>さっそく遊ぶ ↗</button></dialog>
+  <dialog id="share-dialog" aria-labelledby="share-title"><div class="dialog-top"><span class="eyebrow">PASS THE GOOD VIBES</span><button class="dialog-close" type="button" data-close aria-label="閉じる">×</button></div><h2 id="share-title">このループを、誰かに。</h2><p>下のURLに音の並びとテンポが入っています。コピーして共有してください。</p><label for="share-url" class="sr-only">共有URL</label><textarea id="share-url" readonly rows="4"></textarea><p class="help-note" id="share-note">リンク先では、再生ボタンを押すと音が鳴ります。</p><button class="dialog-primary" type="button" data-close>閉じる</button></dialog>
+  <noscript><div class="noscript">OTOで音を作るには、ブラウザのJavaScriptを有効にしてください。</div></noscript>
+</body>
+</html>
