@@ -213,7 +213,8 @@ class YohakuTests(unittest.TestCase):
         self.assertEqual(self.page.evaluate('(key) => localStorage.getItem(key)', KEY), '{broken')
 
     def test_quota_failure(self):
-        self.page.evaluate("Storage.prototype.setItem = function(){throw new DOMException('Full','QuotaExceededError')}")
+        # Return no function: Playwright would invoke an expression's function result.
+        self.page.evaluate("() => { Storage.prototype.setItem = function(){throw new DOMException('Full','QuotaExceededError')}; }")
         self.create('容量不足のノート')
         expect(self.page.locator('.note-card')).to_have_count(6)
         expect(self.page.locator('#storage-warning')).to_be_visible()
